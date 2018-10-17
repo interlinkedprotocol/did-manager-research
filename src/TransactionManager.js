@@ -1,28 +1,11 @@
-import { encodeMethod } from 'ethjs-abi'
-import { find } from 'lodash'
 import { BN } from 'ethereumjs-util'
+import { find } from 'lodash'
 import { sign } from 'ethjs-signer'
+import { fromWei } from 'ethjs-unit'
+import { encodeMethod } from 'ethjs-abi'
 
-
-// export async function changeOwnerTx(owner, newOwner, commonTxData) {
-//   const txData = {
-//     ...commonTxData,
-//     from: this.address,
-//     methodName: 'changeOwner',
-//     params: [this.address, newOwner]
-//   }
-//
-//   return await getRawTx(txData)
-// }
-//
-// export async function lookupOwner(cache = true) {
-//   if (cache && this.owner) return this.owner
-//   const result = await didRegistryInstance.identityOwner(this.address)
-//   return result['0']
-// }
-//
-
-
+import { sleep } from './utils'
+import { stringToBytes32, attributeToHex } from './formatting'
 
 export default class TransactionManager {
   static getBytecode = (contractABI, methodName, params) => encodeMethod(find(contractABI, { name: methodName }), params)
@@ -43,18 +26,11 @@ export default class TransactionManager {
     this.ethInstance = ethInstance
   }
 
-  async changeOwnerTx(owner, newOwner) {
-    const txData = {
-      to: this.registry,
-      contractABI: this.contractABI,
-      from: owner,
-      methodName: 'changeOwner',
-      params: [owner, newOwner]
-    }
-
-    return await this.getRawTx(txData)
+  async calcExtraFundsRequired(senderAddress, amountWei) {
+    const senderBalance = await this.ethInstance.getBalance(senderAddress, 'latest')
+    return senderBalance.ucmp(amountWei) === -1 ? amountWei.sub(senderBalance) : new BN(0)
   }
-
+  
   async getRawTx(txData) {
     if (!txData.from) throw new Error('Missing required parameters', txData)
 
@@ -75,28 +51,93 @@ export default class TransactionManager {
     return rawTx
   }
 
-  async sendFundedTx(rawTx, methodName = '') {
-    const sendTxFunctions = []
+  async waitBlock(txHash) {
+    while (true) {
+      let timer = 0
+      const interval = 4000
+      const timeout = 60000
+      try {
+        const receipt = await this.ethInstance.getTransactionReceipt(txHash)
+        return receipt.status === '0x1'
+      } catch (e) {
+        if (timer > timeout) throw new Error(`Waiting block for more then ${timeout} ms`)
 
-    const extra = await calcExtraFundsRequired(rawTx.from, getUpfrontCost(rawTx))
-    if (extra) {
-      const donatorBalance = await ethInstance.getBalance(DONATOR_ADDRESS, 'latest')
+        console.log(`Mining...`/* ${etherscanBaseUrl}/${txHash} */)
 
-      if (donatorBalance.ucmp(extra) !== -1) {
-        const tx = await getRawTx({
-          from: DONATOR_ADDRESS,
+        timer =+ interval
+        await sleep(interval);
+      }
+    }
+  }
+
+  async sendFunds(rawTx) {
+    const extra = await this.calcExtraFundsRequired(rawTx.from, TransactionManager.getUpfrontCost(rawTx))
+
+    if(extra) {
+      const donatorBalance = await this.ethInstance.getBalance(this.donatorAddress, 'latest')
+
+      if(donatorBalance.ucmp(extra) !== -1) {
+        const tx = await this.getRawTx({
+          from: this.donatorAddress,
           to: rawTx.from,
           value: extra
         })
-        // const sigHex = await this.withPrivateKeyOfDonator(signTx)(tx)
-        sendTxFunctions.push({ name: `Providing extra funds required for execution of ${methodName}`, func: () => sendTx(tx) })
+
+        const txHash = await this.ethInstance.sendTransaction(tx)
+        return await this.waitBlock(txHash)
       } else {
-        throw new Error(
-          `Requested extra funds ${fromWei(extra, 'ether')} Eth is above Donator's balance ${fromWei(donatorBalance, 'ether')} Eth`
-        )
+        throw new Error(`Requested extra funds ${fromWei(extra, 'ether')}
+           Eth is above Donator's balance ${fromWei(donatorBalance, 'ether')} Eth`)
       }
     }
-    sendTxFunctions.push({ name: methodName || 'Main function', func: () => this.sendSignedTx(rawTx) })
-    return sendTxFunctions
+  }
+  
+  async changeOwnerTx(identity, newOwner, { from }) {
+    const txData = {
+      from,
+      to: this.registry,
+      contractABI: this.contractABI,
+      methodName: 'changeOwner',
+      params: [identity, newOwner]
+    }
+
+    return await this.getRawTx(txData)
+  }
+
+  async setAttributeTx(identity, key, value, expiresIn, { from }) {
+    const attrKey = stringToBytes32(key)
+    const attrValue = attributeToHex(key, value)
+
+    const txData = {
+      from,
+      to: this.registry,
+      contractABI: this.contractABI,
+      methodName: 'setAttribute',
+      params: [
+        identity,
+        attrKey,
+        attrValue,
+        expiresIn
+      ]
+    }
+
+    return await this.getRawTx(txData)
+  }
+
+  async addDelegateTx(identity, delegate, delegateType, expiresIn, { from }) {
+    const txData = { 
+      from,
+      to: this.registry,
+      contractABI: this.contractABI,
+      methodName: 'addDelegate',
+      params: [
+        identity,
+        delegateType,
+        delegate,
+        expiresIn
+      ]
+    }
+
+    return await getRawTx(txData)
   }
 }

@@ -2,13 +2,9 @@ import { privateToAddress, pubToAddress, toBuffer } from 'ethereumjs-util'
 
 export const addressFromDid = did => did.slice(9)
 
-export const privateKeyToEthereumAddress = privateKey => `0x${privateToAddress(privateKey).toString('hex')}`
-
-
-
 export const didMethod = ethereumAddress => `did:ethr:${ethereumAddress}`
 
-
+export const privateKeyToEthereumAddress = privateKey => `0x${privateToAddress(privateKey).toString('hex')}`
 
 export const publicKeyToEthereumAddress = publicKey => `0x${pubToAddress(publicKey).toString('hex')}`
 
