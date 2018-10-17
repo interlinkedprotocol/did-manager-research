@@ -1,3 +1,4 @@
+import { Buffer } from 'buffer'
 import { privateToAddress, pubToAddress, toBuffer } from 'ethereumjs-util'
 
 export const addressFromDid = did => did.slice(9)
@@ -44,7 +45,7 @@ export function attributeToHex (key, value) {
   return `0x${Buffer.from(value).toString('hex')}`
 }
   
-export function hexToAttribute (key, value) {
+export function hexToAttribute(key, value) {
   const match = key.match(/^did\/(pub|auth|svc)\/(\w+)(\/(\w+))?(\/(\w+))?$/)
   if (match) {
     const section = match[1]

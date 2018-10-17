@@ -1,11 +1,10 @@
 import { BN } from 'ethereumjs-util'
 import { find } from 'lodash'
 import { sign } from 'ethjs-signer'
-import { fromWei } from 'ethjs-unit'
+import { fromWei, toWei } from 'ethjs-unit'
 import { encodeMethod } from 'ethjs-abi'
 
-import { sleep } from './utils'
-import { stringToBytes32, attributeToHex } from './formatting'
+import { stringToBytes32, attributeToHex } from './utils/formatting'
 
 export default class TransactionManager {
   static getBytecode = (contractABI, methodName, params) => encodeMethod(find(contractABI, { name: methodName }), params)
@@ -20,10 +19,17 @@ export default class TransactionManager {
 
   static signTx = (privateKey, rawTx) => sign(rawTx, privateKey)
 
-  constructor(ethInstance, registry, contractAbi) {
+  constructor(ethInstance, registry, contractAbi, donatorAddress) {
     this.registry = registry
     this.contractABI = contractAbi
     this.ethInstance = ethInstance
+    this.donatorAddress = donatorAddress
+
+    this.txConstants = {
+      TX_NO_BYTECODE: '0x',
+      TX_GAS_PRICE: toWei(100, 'gwei'),
+      TX_GAS_LIMIT: 100000
+    }
   }
 
   async calcExtraFundsRequired(senderAddress, amountWei) {
@@ -38,11 +44,11 @@ export default class TransactionManager {
     const rawTx = {
       from: txData.from,
       to: txData.to,
-      data: txData.data || TX_NO_BYTECODE,
+      data: txData.data || this.txConstants.TX_NO_BYTECODE,
       nonce,
       value: txData.value,
-      gasPrice: txData.gasPrice || TX_GAS_PRICE,
-      gasLimit: txData.gasLimit || TX_GAS_LIMIT
+      gasPrice: txData.gasPrice || this.txConstants.TX_GAS_PRICE,
+      gasLimit: txData.gasLimit || this.txConstants.TX_GAS_LIMIT
     }
 
     if(txData.contractABI && txData.methodName && txData.params)
@@ -52,21 +58,20 @@ export default class TransactionManager {
   }
 
   async waitBlock(txHash) {
-    while (true) {
-      let timer = 0
-      const interval = 4000
-      const timeout = 60000
+    let times = 0
+    const interval = 4000
+    const timeout = 60000
+
+    while (true || (times * interval <= timeout) ) {
       try {
         const receipt = await this.ethInstance.getTransactionReceipt(txHash)
         return receipt.status === '0x1'
       } catch (e) {
-        if (timer > timeout) throw new Error(`Waiting block for more then ${timeout} ms`)
-
+        if (times * (interval + 1) > timeout) throw new Error(`Waiting block for more then ${timeout} ms`)
         console.log(`Mining...`/* ${etherscanBaseUrl}/${txHash} */)
-
-        timer =+ interval
-        await sleep(interval);
+        await (new Promise(resolve => setTimeout(resolve, interval)))
       }
+      times++
     }
   }
 
@@ -138,6 +143,6 @@ export default class TransactionManager {
       ]
     }
 
-    return await getRawTx(txData)
+    return await this.getRawTx(txData)
   }
 }
