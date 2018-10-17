@@ -1,12 +1,17 @@
 import bip39 from 'bip39'
+import { ec as EC } from 'elliptic'
 import { HDNode } from 'ethers'
 import { createJWT, verifyJWT, SimpleSigner } from 'did-jwt'
 import { REGISTRY, delegateTypes } from 'ethr-did-resolver'
 import DidRegistryABI from 'ethr-did-resolver/contracts/ethr-did-registry.json'
+import Eth from 'ethjs-query'
+import HttpProvider from 'ethjs-provider-http'
+import EthContract from 'ethjs-contract'
 
-import TransactionManager from 'TransactionManager'
-import { didMethod, publicKeyToEthereumAddress, addressFromDid, privateKeyToEthereumAddress } from "./formatting";
+import { didMethod, publicKeyToEthereumAddress, addressFromDid, privateKeyToEthereumAddress } from './utils/formatting'
+import TransactionManager from './TransactionManager'
 
+const secp256k1 = new EC('secp256k1')
 const { Secp256k1VerificationKey2018 } = delegateTypes
 
 export default class DidManager {
@@ -22,13 +27,8 @@ export default class DidManager {
     let result = { hierarchy: !!conf.hierarchy }
 
     if (!conf.hierarchy) {
-      // const keypair = secp256k1.genKeyPair()
-      // result.publicKeyHex = keypair.getPublic('hex')
-      // result.privateKeyHex = keypair.getPrivate('hex')
-
       const { publicKeyHex, privateKeyHex } = DidManager.generateKeypair()
       result = { ...result, publicKeyHex, privateKeyHex }
-
     } else {
       result.mnemonic = conf.mnemonic || bip39.generateMnemonic()
 
@@ -58,7 +58,13 @@ export default class DidManager {
     this.didRegistryAddress = conf.didRegistryAddress || REGISTRY
     this.didRegistryInstance = new EthContract(this.ethInstance)(DidRegistryABI).at(this.didRegistryAddress)
 
-    this.TransactionManager = new TransactionManager(this.ethInstance, REGISTRY, DidRegistryABI)
+    this.TransactionManager = new TransactionManager(this.ethInstance, REGISTRY, DidRegistryABI, this.donatorAddress)
+  }
+
+  async checkAndReturnOwner(privateKey, did) {
+    const owner = await this.lookupOwner(did)
+    if(owner !== privateKeyToEthereumAddress(privateKey)) throw new Error(`You are not the owner of ${did}`)
+    return owner
   }
 
   async lookupOwner(did) {
@@ -67,33 +73,29 @@ export default class DidManager {
   }
 
   async changeDidOwner(privateKey, did, newOwner) {
-    const owner = this.lookupOwner(did)
-
-    if(owner !== privateKeyToEthereumAddress(privateKey)) throw new Error(`You are not the owner of ${did}`)
+    const owner = await this.checkAndReturnOwner(privateKey, did)
 
     const rawTx = this.TransactionManager.changeOwnerTx(addressFromDid(did), newOwner, { from: owner })
 
-    const txStatus = await this.sendFunds(rawTx)
+    const txStatus = await this.TransactionManager.sendFunds(rawTx)
 
     if(!txStatus) throw new Error('Funding transaction failed')
 
-    const signedTx =  await this.TransactionManager.signTx(privateKey, rawTx)
+    const signedTx =  await TransactionManager.signTx(privateKey, rawTx)
 
     return await this.ethInstance.sendRawTransaction(signedTx)
   }
 
   async setAttribute(privateKey, did, key, value, expiresIn = 86400) {
-    const owner = this.lookupOwner(did)
-
-    if(owner !== privateKeyToEthereumAddress(privateKey)) throw new Error(`You are not the owner of ${did}`)
+    const owner = await this.checkAndReturnOwner(privateKey, did)
 
     const rawTx = this.TransactionManager.setAttributeTx(addressFromDid(did), key, value, expiresIn, { from: owner })
 
-    const txStatus = await this.sendFunds(rawTx)
+    const txStatus = await this.TransactionManager.sendFunds(rawTx)
 
     if(!txStatus) throw new Error('Funding transaction failed')
 
-    const signedTx =  await this.TransactionManager.signTx(privateKey, rawTx)
+    const signedTx =  await TransactionManager.signTx(privateKey, rawTx)
 
     return await this.ethInstance.sendRawTransaction(signedTx)
   }
@@ -103,17 +105,15 @@ export default class DidManager {
   }
 
   async addDelegate(privateKey, did, delegate, delegateType = Secp256k1VerificationKey2018, expiresIn = 86400) {
-    const owner = this.lookupOwner(did)
-
-    if(owner !== privateKeyToEthereumAddress(privateKey)) throw new Error(`You are not the owner of ${did}`)
+    const owner = await this.checkAndReturnOwner(privateKey, did)
 
     const rawTx = this.TransactionManager.addDelegateTx(addressFromDid(did), delegate, delegateType, expiresIn, { from: owner })
 
-    const txStatus = await this.sendFunds(rawTx)
+    const txStatus = await this.TransactionManager.sendFunds(rawTx)
 
     if(!txStatus) throw new Error('Funding transaction failed')
 
-    const signedTx =  await this.TransactionManager.signTx(privateKey, rawTx)
+    const signedTx =  await TransactionManager.signTx(privateKey, rawTx)
 
     return await this.ethInstance.sendRawTransaction(signedTx)
   }
@@ -122,23 +122,13 @@ export default class DidManager {
     const keypair = DidManager.generateKeypair()
     const delegate = publicKeyToEthereumAddress(keypair.publicKeyHex)
 
-    const txHash = await this.addDelegate(
-      { privateKey },
-      did,
-      delegate,
-      delegateType,
-      expiresIn
-    )
+    const txHash = await this.addDelegate(privateKey, did, delegate, delegateType, expiresIn)
 
     return { keypair, txHash }
   }
 
-  async signJWT(privateKey, payload, { issuer, audience = undefined, expiresIn = 86400 }) {
-    const owner = this.lookupOwner(issuer)
-
-    if(owner !== privateKeyToEthereumAddress(privateKey)) {
-      throw new Error(`You are not the owner of provided issuer did ${issuer}`)
-    }
+  async signJWT(privateKey, payload, issuer, audience = undefined, expiresIn = 86400) {
+    await this.checkAndReturnOwner(privateKey, issuer)
 
     return createJWT(
       payload,
@@ -152,7 +142,7 @@ export default class DidManager {
     )
   }
 
-  async verifyJWT(jwt, audience = undefined) {
-    return verifyJWT(jwt, { audience })
+  async verifyJWT(jwt, audience = undefined, auth = false) {
+    return verifyJWT(jwt, { audience, auth })
   }
 }
