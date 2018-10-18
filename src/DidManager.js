@@ -15,7 +15,6 @@ const secp256k1 = new EC('secp256k1')
 const { Secp256k1VerificationKey2018 } = delegateTypes
 
 export default class DidManager {
-
   static generateKeypair() {
     const keypair = secp256k1.genKeyPair()
     const publicKeyHex = keypair.getPublic('hex')
