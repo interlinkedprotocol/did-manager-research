@@ -22,6 +22,7 @@ export default class DidManager {
     return { publicKeyHex, privateKeyHex }
   }
 
+
   static generateDID = (conf = {}) => {
     let result = { hierarchy: !!conf.hierarchy }
 
