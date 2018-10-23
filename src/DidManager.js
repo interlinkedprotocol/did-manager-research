@@ -43,8 +43,8 @@ export default class DidManager {
       result.privateKeyHex = addressNode.privateKey
     }
 
-    result.ethereumAddress = publicKeyToEthereumAddress(result.publicKeyHex)
-    result.did = didMethod(result.ethereumAddress)
+    // result.ethereumAddress = publicKeyToEthereumAddress(result.publicKeyHex)
+    // result.did = didMethod(result.ethereumAddress)
 
     return result
   }
