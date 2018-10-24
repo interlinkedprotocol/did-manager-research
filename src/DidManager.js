@@ -17,11 +17,10 @@ const { Secp256k1VerificationKey2018 } = delegateTypes
 export default class DidManager {
   static generateKeypair() {
     const keypair = secp256k1.genKeyPair()
-    const publicKeyHex = keypair.getPublic('hex')
-    const privateKeyHex = keypair.getPrivate('hex')
+    const publicKeyHex = `0x${keypair.getPublic('hex')}`
+    const privateKeyHex = `0x${keypair.getPrivate('hex')}`
     return { publicKeyHex, privateKeyHex }
   }
-
 
   static generateDID = (conf = {}) => {
     let result = { hierarchy: !!conf.hierarchy }
@@ -43,8 +42,8 @@ export default class DidManager {
       result.privateKeyHex = addressNode.privateKey
     }
 
-    // result.ethereumAddress = publicKeyToEthereumAddress(result.publicKeyHex)
-    // result.did = didMethod(result.ethereumAddress)
+    result.ethereumAddress = publicKeyToEthereumAddress(result.publicKeyHex)
+    result.did = didMethod(result.ethereumAddress)
 
     return result
   }
@@ -128,8 +127,6 @@ export default class DidManager {
   }
 
   async signJWT(privateKey, payload, issuer, audience = undefined, expiresIn = 86400) {
-    await this.checkAndReturnOwner(privateKey, issuer)
-
     return createJWT(
       payload,
       { 
