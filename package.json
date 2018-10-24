@@ -1,6 +1,6 @@
 {
   "name": "interlinked-protocol-agent",
-  "version": "1.4.3",
+  "version": "1.4.4",
   "description": "Interlinked protocol manager",
   "main": "dist/index.js",
   "scripts": {
