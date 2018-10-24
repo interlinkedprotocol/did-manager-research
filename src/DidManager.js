@@ -48,6 +48,23 @@ export default class DidManager {
     return result
   }
 
+  static async signJWT(privateKey, payload, issuer, audience = undefined, expiresIn = 86400) {
+    return createJWT(
+      payload,
+      { 
+        alg: 'ES256K-R',
+        signer: SimpleSigner(privateKey.slice(2)),
+        issuer,
+        audience, 
+        expiresIn
+      }
+    )
+  }
+
+  static async verifyJWT(jwt, audience = undefined, auth = false) {
+    return verifyJWT(jwt, { audience, auth })
+  }
+  
   constructor(conf) {
     if (!conf.rpcUrl) throw new Error (`Provided RPC URL is '${conf.rpcUrl}'`)
 
@@ -124,22 +141,5 @@ export default class DidManager {
     const txHash = await this.addDelegate(privateKey, did, delegate, delegateType, expiresIn)
 
     return { keypair, txHash }
-  }
-
-  async signJWT(privateKey, payload, issuer, audience = undefined, expiresIn = 86400) {
-    return createJWT(
-      payload,
-      { 
-        alg: 'ES256K-R',
-        signer: SimpleSigner(privateKey.slice(2)),
-        issuer,
-        audience, 
-        expiresIn
-      }
-    )
-  }
-
-  async verifyJWT(jwt, audience = undefined, auth = false) {
-    return verifyJWT(jwt, { audience, auth })
   }
 }
