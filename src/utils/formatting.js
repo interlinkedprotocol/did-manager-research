@@ -5,9 +5,9 @@ export const addressFromDid = did => did.slice(9)
 
 export const didMethod = ethereumAddress => `did:ethr:${ethereumAddress}`
 
-export const privateKeyToEthereumAddress = privateKey => `0x${privateToAddress(privateKey).toString('hex')}`
+export const privateKeyToEthereumAddress = privateKeyHex => `0x${privateToAddress(`0x${privateKeyHex}`).toString('hex')}`
 
-export const publicKeyToEthereumAddress = publicKey => `0x${pubToAddress(publicKey).toString('hex')}`
+export const publicKeyToEthereumAddress = publicKeyHex => `0x${pubToAddress(`0x${publicKeyHex.slice(2)}`).toString('hex')}`
 
 export const bytes32toString = bytes32 => toBuffer(bytes32).toString('utf8').replace(/\0+$/, '')
 
